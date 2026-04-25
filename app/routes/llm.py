@@ -3,6 +3,9 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import sqlglot
 from fastapi import HTTPException
+from fastapi import APIRouter
+
+router = APIRouter()
 
 load_dotenv()
 
@@ -12,6 +15,7 @@ client = OpenAI(
 )
 
 
+@router.post("/ask")
 def ask_llm(question: str) -> str:
     response = client.chat.completions.create(
         model=os.getenv("LLM_MODEL"),
@@ -26,7 +30,7 @@ def ask_llm(question: str) -> str:
     sql = response.choices[0].message.content.strip()
     validate_sql(sql)
 
-    return sql
+    return {"sql": sql}
 
 
 def is_valid_syntax(sql: str) -> bool:
