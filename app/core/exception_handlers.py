@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from app.core.exceptions import (
+    SQLFileIOError,
     EmptySchemaError,
     InvalidSQLError,
     SchemaError,
@@ -10,6 +11,10 @@ from app.core.exceptions import (
 
 
 def register_exception_handlers(app: FastAPI):
+    @app.exception_handler(SQLFileIOError)
+    async def file_io_error_handler(request, exc):
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
     @app.exception_handler(EmptySchemaError)
     async def empty_schema_handler(request, exc):
         return JSONResponse(status_code=400, content={"detail": str(exc)})
