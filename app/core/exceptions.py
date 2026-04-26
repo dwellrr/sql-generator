@@ -10,15 +10,15 @@ class InvalidSQLError(Exception):
         super().__init__(detail)
 
 
+class EmptyFileError(Exception):
+    def __init__(self):
+        super().__init__("The loaded file is empty")
+
+
 class SchemaError(Exception):
     """Base for all schema-related errors"""
 
     pass
-
-
-class EmptySchemaError(SchemaError):
-    def __init__(self):
-        super().__init__("The loaded schema file is empty")
 
 
 class SchemaNotLoadedError(SchemaError):

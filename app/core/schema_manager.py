@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 from app.core.exceptions import (
-    EmptySchemaError,
+    EmptyFileError,
     InvalidSQLError,
     NoSchemaError,
 )
@@ -17,7 +17,7 @@ class SchemaManager(BaseSQLManager):
     def __init__(self):
         super().__init__(
             file_path=SCHEMA_FILE,
-            empty_error=EmptySchemaError,
+            empty_error=EmptyFileError,
             invalid_error=InvalidSQLError,
         )
         self._schema: str | None = None
