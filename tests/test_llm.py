@@ -1,4 +1,4 @@
-from app.llm import is_valid_syntax
+from app.routes.llm import is_valid_syntax
 
 
 def test_valid_syntax():
