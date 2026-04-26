@@ -106,7 +106,7 @@ def apply_schema_incremental():
     Uses IF NOT EXISTS — safe to run multiple times.
     schema SQL must use CREATE TABLE IF NOT EXISTS etc.
     """
-    sql_content = (SCHEMA_FILE.read()).decode("utf-8")
+    sql_content = SCHEMA_FILE.read_text()
 
     with engine.begin() as conn:
         try:
