@@ -3,8 +3,9 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from sqlalchemy import text
 import logging
-from app.routes import db_api, llm, schema_manager
+from app.routes import db_api, llm, schema
 from app.routes.db_api import engine
+from app.core.exception_handlers import register_exception_handlers
 
 
 @asynccontextmanager
@@ -19,9 +20,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="NL SQL Query API", lifespan=lifespan)
 
+register_exception_handlers(app)
+
 app.include_router(llm.router, prefix="/query", tags=["NL to SQL"])
 app.include_router(db_api.router, prefix="/db", tags=["Database operations"])
-app.include_router(schema_manager.router, prefix="/schema", tags=["Schema operations"])
+app.include_router(schema.router, prefix="/schema", tags=["Schema operations"])
 
 
 class QuestionRequest(BaseModel):

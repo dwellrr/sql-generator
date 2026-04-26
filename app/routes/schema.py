@@ -1,0 +1,24 @@
+from fastapi import APIRouter, UploadFile
+from pathlib import Path
+
+from fastapi.responses import PlainTextResponse
+
+from app.core.schema_manager import schema_manager
+
+ROOT = Path(__file__).parent.parent.parent
+SCHEMA_FILE = ROOT / "schema.sql"
+
+router = APIRouter()
+
+
+@router.post("/upload")
+async def upload_schema(file: UploadFile):
+    content = (await file.read()).decode("utf-8")
+    schema_manager.upload_schema(content)
+    return {"status": "success", "message": "Schema uploaded successfully"}
+
+
+@router.post("/read")
+def read_schema():
+    content = schema_manager.get_schema()
+    return PlainTextResponse(content=content)
