@@ -1,4 +1,6 @@
 from pathlib import Path
+import os
+import subprocess
 
 
 from app.core.exceptions import (
@@ -9,7 +11,7 @@ from app.core.exceptions import (
 from .base_sql_manager import BaseSQLManager
 
 ROOT = Path(__file__).parent.parent.parent
-DUMP_FILE = ROOT / "latest.dump"
+DUMP_FILE = ROOT / "dump.sql"
 
 
 class DumpManager(BaseSQLManager):
@@ -22,6 +24,30 @@ class DumpManager(BaseSQLManager):
 
     def _validate(self, sql: str):
         pass
+
+    def generate_from_db(self, db_url: str):
+        result = subprocess.run(
+            [
+                "pg_dump",
+                "--host",
+                self._url.hostname,
+                "--port",
+                str(self._url.port),
+                "--username",
+                self._url.username,
+                "--dbname",
+                self._url.path[1:],
+                "--no-password",
+            ],
+            env={**os.environ, "PGPASSWORD": self._url.password},
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"pg_dump failed: {result.stderr}")
+
+        return result.stdout
 
 
 dump_manager = DumpManager()

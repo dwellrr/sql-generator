@@ -1,4 +1,6 @@
 from pathlib import Path
+from sqlalchemy.orm import Session
+from sqlalchemy import inspect
 
 
 from app.core.exceptions import (
@@ -37,6 +39,40 @@ class SchemaManager(BaseSQLManager):
 
     def _validate(self, sql: str):
         pass
+
+    def generate_from_db(self, session: Session):
+        inspector = inspect(session.bind)
+        output = []
+
+        for table_name in inspector.get_table_names(schema="public"):
+            columns = inspector.get_columns(table_name, schema="public")
+            pk = inspector.get_pk_constraint(table_name, schema="public")
+            fks = inspector.get_foreign_keys(table_name, schema="public")
+
+            col_defs = []
+            for col in columns:
+                nullable = "" if col["nullable"] else " NOT NULL"
+                col_defs.append(f'  "{col["name"]}" {col["type"]}{nullable}')
+
+            if pk["constrained_columns"]:
+                pk_cols = ", ".join(pk["constrained_columns"])
+                col_defs.append(f"  PRIMARY KEY ({pk_cols})")
+
+            for fk in fks:
+                local_cols = ", ".join(f'"{c}"' for c in fk["constrained_columns"])
+                ref_cols = ", ".join(f'"{c}"' for c in fk["referred_columns"])
+                ref_table = fk["referred_table"]
+                col_defs.append(
+                    f'  FOREIGN KEY ({local_cols}) REFERENCES "{ref_table}" ({ref_cols})'
+                )
+
+            output.append(f'CREATE TABLE "{table_name}" (' + ", ".join(col_defs) + ");")
+
+        return "\n\n".join(output)
+
+    def generate_from_db_to_file(self, session: Session):
+        content = self.generate_from_db(session=session)
+        self._save(content=content)
 
 
 schema_manager = SchemaManager()

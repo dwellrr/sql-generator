@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import sqlglot
 from fastapi import HTTPException
 from fastapi import APIRouter
+from fastapi.responses import PlainTextResponse
 
 SCHEMA_FILE = Path(__file__).parent.parent.parent / "schema.sql"
 
@@ -24,7 +25,7 @@ client = OpenAI(
 def ask_llm(question: str) -> dict:
     schema = SCHEMA_FILE.read_text() if SCHEMA_FILE.exists() else None
 
-    system_prompt = """Return ONLY a valid SQL query. No explanation. 
+    system_prompt = """Return ONLY a valid SQL query. IMPORTANT: No explanation at all. 
         If the question cannot be answered with the schema, 
         start your response with ERROR: followed by a description of the issue."""
     if schema:
@@ -41,18 +42,21 @@ def ask_llm(question: str) -> dict:
     )
 
     logging.warning(system_prompt)
-    sql = response.choices[0].message.content.strip()
+    sql = response.choices[0].message.content
     sql = clean_sql(sql)
 
     if sql.upper().startswith("ERROR:"):
         raise HTTPException(status_code=400, detail=sql[6:].strip())
 
     validate_sql(sql)
-    return {"sql": sql}
+    return PlainTextResponse(content=sql)
 
 
 def clean_sql(sql: str) -> str:
-    sql = re.sub(r"```sql|```", "", sql)
+    sql = sql.replace("```sql", "")
+    sql = sql.replace("```", "")
+    sql = sql.replace("\n", " ")
+    sql = re.sub(r"\s+", " ", sql)
     return sql.strip()
 
 

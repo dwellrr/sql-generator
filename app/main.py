@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy import text
 import logging
 from app.routes import db_api, llm, schema
-from app.routes.db_api import engine
+from app.core.db import engine
 from app.core.exception_handlers import register_exception_handlers
 
 

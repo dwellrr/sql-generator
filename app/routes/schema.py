@@ -1,5 +1,8 @@
 from fastapi import APIRouter, UploadFile
 from pathlib import Path
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from app.core.db import get_db
 
 from fastapi.responses import PlainTextResponse
 
@@ -22,3 +25,9 @@ async def upload_schema(file: UploadFile):
 def read_schema():
     content = schema_manager.get_schema()
     return PlainTextResponse(content=content)
+
+
+@router.post("/update")
+def update_schema_from_db(db: Session = Depends(get_db)):
+    schema_manager.generate_from_db_to_file(db)
+    return PlainTextResponse("Schema updated sucessfully")

@@ -1,16 +1,22 @@
 from pathlib import Path
 import logging
+from abc import ABC, abstractmethod
 
 import sqlglot
+from sqlalchemy.orm import Session
 
 from .exceptions import SQLFileIOError
 
 
-class BaseSQLManager:
+class BaseSQLManager(ABC):
     def __init__(self, file_path: Path, empty_error: type, invalid_error: type):
         self._file_path = file_path
         self._empty_error = empty_error
         self._invalid_error = invalid_error
+
+    @abstractmethod
+    def generate_from_db(self, session: Session):
+        pass
 
     def load_from_disk(self) -> str | None:
         if not self._file_path.exists():
