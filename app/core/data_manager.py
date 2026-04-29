@@ -25,20 +25,41 @@ class DataManager(BaseSQLManager):
         pass
 
     def generate_from_db(self, session: Session):
-        inspector = inspect(session.bind)
+        inspector = inspect(session.get_bind())
         output = []
 
         for table_name in inspector.get_table_names(schema="public"):
             result = session.execute(text(f'SELECT * FROM "{table_name}"'))
             rows = result.fetchall()
-            columns = result.keys()
+            keys = result.keys()
 
             for row in rows:
-                values = ", ".join([f"'{v}'" if v is not None else "NULL" for v in row])
-                cols = ", ".join(columns)
+                cols = ", ".join(f'"{k}"' for k in keys)
+                values = ", ".join(self._format_value(v) for v in row)
                 output.append(f'INSERT INTO "{table_name}" ({cols}) VALUES ({values});')
 
         return "\n".join(output)
+
+    def _format_value(self, v) -> str:
+        if v is None:
+            return "NULL"
+        if isinstance(v, bool):
+            return "TRUE" if v else "FALSE"
+        if isinstance(v, (int, float)):
+            return str(v)
+        if isinstance(v, (dict, list)):
+            # JSON columns — escape single quotes and cast
+            import json
+
+            escaped = json.dumps(v).replace("'", "''")
+            return f"'{escaped}'::jsonb"
+        # strings, dates, timestamps, decimals — cast to text, escape single quotes
+        escaped = str(v).replace("'", "''")
+        return f"'{escaped}'"
+
+    def generate_from_db_to_file(self, session: Session):
+        content = self.generate_from_db(session=session)
+        self._save(content=content)
 
 
 data_manager = DataManager()

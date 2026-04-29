@@ -1,5 +1,4 @@
 from fastapi import APIRouter, UploadFile
-from pathlib import Path
 from fastapi import Depends
 from sqlalchemy.orm import Session
 from app.core.db import get_db
@@ -8,16 +7,13 @@ from fastapi.responses import PlainTextResponse
 
 from app.core.schema_manager import schema_manager
 
-ROOT = Path(__file__).parent.parent.parent
-SCHEMA_FILE = ROOT / "schema.sql"
-
 router = APIRouter()
 
 
 @router.post("/upload")
 async def upload_schema(file: UploadFile):
     content = (await file.read()).decode("utf-8")
-    schema_manager.upload_schema(content)
+    schema_manager.upload(content)
     return {"status": "success", "message": "Schema uploaded successfully"}
 
 

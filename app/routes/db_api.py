@@ -1,4 +1,5 @@
 import os
+import re
 
 import sqlglot
 from dotenv import load_dotenv
@@ -7,8 +8,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.schema_manager import schema_manager
+from app.core.data_manager import data_manager
 from fastapi.responses import PlainTextResponse
 from app.services.db_service import VerificationService
+from sqlalchemy import inspect
 
 load_dotenv()
 
@@ -110,6 +113,36 @@ def apply_schema_incremental(db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=f"Schema apply failed: {str(e)}")
     db.commit()
     return {"status": "success", "message": "Schema applied incrementally"}
+
+
+@router.post("/apply/full-reset-data")
+def reset_and_apply_data(db: Session = Depends(get_db)):
+    """Drop all data and reapply from scratch. Order doesn't matter — TRUNCATE handles FK deps."""
+    inspector = inspect(db.get_bind())
+    table_names = inspector.get_table_names(schema="public")
+
+    if not table_names:
+        return
+
+    tables = ", ".join(f'"{t}"' for t in table_names)
+    db.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE;"))
+    db.execute(text(data_manager.load_from_disk()))
+    db.commit()
+
+
+@router.post("/apply/incremental-data")
+def apply_data_incremental(db: Session = Depends(get_db)):
+    """Apply data without wiping existing rows. Skips conflicts on PK."""
+    statements = [
+        s.strip() for s in data_manager.load_from_disk().split(";") if s.strip()
+    ]
+
+    for stmt in statements:
+        incremental = re.sub(r"^(INSERT INTO\s+)", r"\1", stmt, flags=re.IGNORECASE)
+        incremental = f"{incremental} ON CONFLICT DO NOTHING"
+        db.execute(text(incremental))
+
+    db.commit()
 
 
 @router.post("/validatequery")

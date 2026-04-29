@@ -23,7 +23,7 @@ class BaseSQLManager(ABC):
             raise self._empty_error()
         return self._file_path.read_text(encoding="utf-8")
 
-    def upload_schema(self, content: str):
+    def upload(self, content: str):
         self.validate(content)
         self._save(content)
 
