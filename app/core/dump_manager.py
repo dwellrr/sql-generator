@@ -1,6 +1,8 @@
 from pathlib import Path
 import os
 import subprocess
+from dotenv import load_dotenv
+from urllib.parse import urlparse
 
 
 from app.core.exceptions import (
@@ -13,6 +15,8 @@ from .base_sql_manager import BaseSQLManager
 ROOT = Path(__file__).parent.parent.parent
 DUMP_FILE = ROOT / "dump.sql"
 
+load_dotenv()
+
 
 class DumpManager(BaseSQLManager):
     def __init__(self):
@@ -21,11 +25,12 @@ class DumpManager(BaseSQLManager):
             empty_error=EmptyFileError,
             invalid_error=InvalidSQLError,
         )
+        self._url = urlparse(os.getenv("DB_URL"))
 
     def _validate(self, sql: str):
         pass
 
-    def generate_from_db(self, db_url: str):
+    def generate_from_db(self):
         result = subprocess.run(
             [
                 "pg_dump",
