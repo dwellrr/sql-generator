@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.services.db_service import VerificationService
 from app.core.schema_manager import schema_manager
 from sqlalchemy import text
+from app.core.exceptions import NoSchemaError
 
 
 class LLMService:
@@ -155,11 +156,19 @@ class LLMService:
 
     def generate_sql(self, question: str, max_retries: int = 5) -> str:
         failed_attempts: list[tuple[str, str]] = []
-        schema = schema_manager.get_schema()
-        verification_service = self.get_verification_service()
+        try:
+            schema = schema_manager.get_schema()
+        except NoSchemaError:
+            schema = None
+
+        has_schema = schema is not None
+        verification_service = self.get_verification_service() if has_schema else None
 
         for attempt in range(max_retries):
-            prompt = self.build_prompt(question, schema, failed_attempts)
+            if schema:
+                prompt = self.build_prompt(question, schema, failed_attempts)
+            else:
+                prompt = self.build_prompt(question, None, failed_attempts)
 
             try:
                 sql = self.ask_llm(prompt, question)
@@ -171,6 +180,9 @@ class LLMService:
             except HTTPException as e:
                 logging.warning("Attempt %d failed: %s", attempt + 1, e.detail)
                 failed_attempts.append((sql, e.detail))
+
+            if not has_schema:
+                return sql
 
             try:
                 fits_db, error = verification_service.can_apply_to_db(sql=sql)
