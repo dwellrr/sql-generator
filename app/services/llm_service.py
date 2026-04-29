@@ -9,6 +9,7 @@ from openai import OpenAI
 from sqlalchemy.orm import Session
 from app.services.db_service import VerificationService
 from app.core.schema_manager import schema_manager
+from sqlalchemy import text
 
 
 class LLMService:
@@ -19,6 +20,28 @@ class LLMService:
             api_key=os.getenv("LLM_API_KEY"),
         )
         self.db = db
+        self.tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "query_db",
+                    "description": (
+                        "Run a read-only SELECT query to inspect existing data. "
+                        "Use this to fetch IDs or sample values before writing your final query."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "sql": {
+                                "type": "string",
+                                "description": "A SELECT query. Must be read-only.",
+                            }
+                        },
+                        "required": ["sql"],
+                    },
+                },
+            }
+        ]
 
     def get_verification_service(self):
         return VerificationService(self.db)
@@ -29,7 +52,7 @@ class LLMService:
         schema: str | None,
         query_errors: list[tuple[str, str]] | None,
     ) -> str:
-        system_prompt = """Return ONLY a valid SQL query. IMPORTANT: No explanation at all, no markup. 
+        system_prompt = """You are a PostgreSQL SQL assistant. Return ONLY valid PostgreSQL syntax. IMPORTANT: No explanation at all, no markup. 
             If the question cannot be answered with the provided schema, 
             start your response with ERROR: followed by a description of the issue."""
         if schema:
@@ -54,22 +77,48 @@ class LLMService:
         return system_prompt
 
     def ask_llm(self, prompt: str, question: str) -> dict:
-        response = self.client.chat.completions.create(
-            model=os.getenv("LLM_MODEL"),
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": question},
-            ],
-        )
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": question},
+        ]
 
-        choice = response.choices[0]
+        for _ in range(5):  # max tool-call rounds
+            response = self.client.chat.completions.create(
+                model=os.getenv("LLM_MODEL"), messages=messages
+            )
 
-        # Log the full choice so we can see what's actually coming back
-        logging.warning("Finish reason: %s", choice.finish_reason)
-        logging.warning("Raw message: %s", choice.message)
-        logging.warning(
-            "Content: %r", choice.message.content
-        )  # %r shows None explicitly
+            choice = response.choices[0]
+
+            # Log the full choice so we can see what's actually coming back
+            logging.warning("Finish reason: %s", choice.finish_reason)
+            logging.warning("Raw message: %s", choice.message)
+            logging.warning(
+                "Content: %r", choice.message.content
+            )  # %r shows None explicitly
+
+            if choice.finish_reason == "stop":
+                sql = choice.message.content or ""
+                if not sql:
+                    raise HTTPException(
+                        status_code=502, detail="LLM returned empty response"
+                    )
+                if sql.upper().startswith("ERROR:"):
+                    raise HTTPException(status_code=400, detail=sql[6:].strip())
+                return self.clean_sql(sql)
+
+            # LLM wants to call a tool
+            if choice.finish_reason == "tool_calls":
+                messages.append(choice.message)  # append assistant turn with tool_calls
+
+                for tool_call in choice.message.tool_calls:
+                    result = self._handle_tool_call(tool_call)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": result,
+                        }
+                    )
 
         sql = choice.message.content
 
@@ -86,6 +135,23 @@ class LLMService:
 
         logging.warning(f"Generated result: {sql}")
         return sql
+
+    def _handle_tool_call(self, tool_call) -> str:
+        import json
+
+        args = json.loads(tool_call.function.arguments)
+        sql = args.get("sql", "")
+
+        parsed = sql.strip().upper()
+        if not parsed.startswith("SELECT"):
+            return "ERROR: Only SELECT queries are allowed for introspection."
+
+        try:
+            result = self.db.execute(text(sql))
+            rows = result.fetchall()
+            return json.dumps([list(r) for r in rows[:50]])
+        except Exception as e:
+            return f"ERROR: {str(e)}"
 
     def generate_sql(self, question: str, max_retries: int = 5) -> str:
         failed_attempts: list[tuple[str, str]] = []
@@ -138,7 +204,9 @@ class LLMService:
             return False
 
     def validate_sql(self, sql: str):
-        if not self.is_valid_syntax(sql):
+        try:
+            sqlglot.parse_one(sql, dialect="postgres")
+        except (sqlglot.errors.ParseError, sqlglot.errors.TokenError):
             raise HTTPException(
                 status_code=400, detail="Generated query has invalid SQL syntax"
             )

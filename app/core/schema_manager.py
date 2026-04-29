@@ -1,6 +1,6 @@
 from pathlib import Path
 from sqlalchemy.orm import Session
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 
 
 from app.core.exceptions import (
@@ -41,22 +41,36 @@ class SchemaManager(BaseSQLManager):
         pass
 
     def generate_from_db(self, session: Session):
-        inspector = inspect(session.bind)
+        bind = session.get_bind()
+        inspector = inspect(bind)
+        # needed to compile types to their string representation
+        dialect = bind.dialect
         output = []
 
         for table_name in inspector.get_table_names(schema="public"):
             columns = inspector.get_columns(table_name, schema="public")
             pk = inspector.get_pk_constraint(table_name, schema="public")
             fks = inspector.get_foreign_keys(table_name, schema="public")
+            pk_cols = set(pk.get("constrained_columns", []))
+            serial_cols = self._get_serial_columns(session, table_name)
 
             col_defs = []
             for col in columns:
-                nullable = "" if col["nullable"] else " NOT NULL"
-                col_defs.append(f'  "{col["name"]}" {col["type"]}{nullable}')
+                name = col["name"]
+                # compile the type object to a plain string e.g. VARCHAR(100)
+                col_type = col["type"].compile(dialect=dialect)
 
-            if pk["constrained_columns"]:
-                pk_cols = ", ".join(pk["constrained_columns"])
-                col_defs.append(f"  PRIMARY KEY ({pk_cols})")
+                if name in serial_cols and name in pk_cols:
+                    col_defs.append(f'  "{name}" SERIAL PRIMARY KEY')
+                else:
+                    nullable = "" if col["nullable"] else " NOT NULL"
+                    col_defs.append(f'  "{name}" {col_type}{nullable}')
+
+            # only add a separate PK constraint if it wasn't already inlined above
+            non_serial_pks = [c for c in pk_cols if c not in serial_cols]
+            if non_serial_pks:
+                pk_str = ", ".join(f'"{c}"' for c in non_serial_pks)
+                col_defs.append(f"  PRIMARY KEY ({pk_str})")
 
             for fk in fks:
                 local_cols = ", ".join(f'"{c}"' for c in fk["constrained_columns"])
@@ -66,9 +80,27 @@ class SchemaManager(BaseSQLManager):
                     f'  FOREIGN KEY ({local_cols}) REFERENCES "{ref_table}" ({ref_cols})'
                 )
 
-            output.append(f'CREATE TABLE "{table_name}" (' + ", ".join(col_defs) + ");")
+            col_block = ",\n".join(col_defs)
+            output.append(f'CREATE TABLE "{table_name}" (\n{col_block}\n);')
 
         return "\n\n".join(output)
+
+    def _get_serial_columns(self, session: Session, table_name: str) -> set[str]:
+        """Return column names that are backed by an owned sequence (i.e. SERIAL)."""
+        result = session.execute(
+            text("""
+            SELECT a.attname
+            FROM pg_class t
+            JOIN pg_attribute a ON a.attrelid = t.oid
+            JOIN pg_depend d ON d.refobjid = t.oid AND d.refobjsubid = a.attnum
+            JOIN pg_class s ON s.oid = d.objid AND s.relkind = 'S'
+            WHERE t.relname = :table_name
+              AND t.relnamespace = 'public'::regnamespace
+              AND d.deptype = 'a'
+        """),
+            {"table_name": table_name},
+        )
+        return {row[0] for row in result}
 
     def generate_from_db_to_file(self, session: Session):
         content = self.generate_from_db(session=session)

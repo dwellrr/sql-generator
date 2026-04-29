@@ -47,30 +47,36 @@ def run_query(sql: str, db: Session = Depends(get_db)):
 
 @router.post("/apply/full-reset")
 def apply_schema_full_reset(db: Session = Depends(get_db)):
-    """
-    Drops ALL tables in the public schema and reapplies the uploaded SQL schema.
-    Destructive — all data will be lost.
-    """
     sql_content = schema_manager.get_schema()
 
+    # Drop all tables
     db.execute(
         text("""
-        DO $$ DECLARE
-            r RECORD;
+        DO $$ DECLARE r RECORD;
         BEGIN
-            FOR r IN (
-                SELECT tablename FROM pg_tables
-                WHERE schemaname = 'public'
-            ) LOOP
+            FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
                 EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
             END LOOP;
         END $$;
     """)
     )
+
+    # Drop all sequences (left behind by SERIAL columns)
     db.execute(
         text("""
-        DO $$ DECLARE
-            r RECORD;
+        DO $$ DECLARE r RECORD;
+        BEGIN
+            FOR r IN (SELECT relname FROM pg_class WHERE relkind = 'S' AND relnamespace = 'public'::regnamespace) LOOP
+                EXECUTE 'DROP SEQUENCE IF EXISTS ' || quote_ident(r.relname) || ' CASCADE';
+            END LOOP;
+        END $$;
+    """)
+    )
+
+    # Drop all enum types
+    db.execute(
+        text("""
+        DO $$ DECLARE r RECORD;
         BEGIN
             FOR r IN (
                 SELECT typname FROM pg_type
@@ -82,6 +88,7 @@ def apply_schema_full_reset(db: Session = Depends(get_db)):
         END $$;
     """)
     )
+
     db.execute(text(sql_content))
     db.commit()
 
