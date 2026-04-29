@@ -8,12 +8,17 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.schema_manager import schema_manager
 from fastapi.responses import PlainTextResponse
+from app.services.db_service import VerificationService
 
 load_dotenv()
 
 DB_URL = os.getenv("DB_URL")
 
 router = APIRouter()
+
+
+def get_verification_service(db: Session = Depends(get_db)) -> VerificationService:
+    return VerificationService(db=db)
 
 
 @router.get("/generate/schema")
@@ -98,3 +103,19 @@ def apply_schema_incremental(db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=f"Schema apply failed: {str(e)}")
     db.commit()
     return {"status": "success", "message": "Schema applied incrementally"}
+
+
+@router.post("/validatequery")
+def validate_query_against_db(sql: str, db: Session = Depends(get_db)):
+    """
+    Runs a query and rolls it back.
+    This is needed to make sure a query is
+    valid for running on the database
+    """
+    valid_for_db, error = get_verification_service().can_apply_to_db(sql, db)
+    if not valid_for_db:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Provided query cannot run on the database: {str(error)}",
+        )
+    return {"status": "success", "message": "The query can be applied"}
