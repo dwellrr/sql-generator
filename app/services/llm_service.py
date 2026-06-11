@@ -1,24 +1,24 @@
 import logging
-import os
+import json
 import re
 
 import sqlglot
-from dotenv import load_dotenv
 from fastapi import HTTPException
 from openai import OpenAI
-from sqlalchemy.orm import Session
-from app.services.db_service import VerificationService
-from app.core.schema_manager import schema_manager
 from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
 from app.core.exceptions import NoSchemaError
+from app.managers.schema_manager import schema_manager
+from app.services.verification_service import VerificationService
 
 
 class LLMService:
     def __init__(self, db: Session):
-        load_dotenv()
         self.client = OpenAI(
-            base_url=os.getenv("LLM_HOST"),
-            api_key=os.getenv("LLM_API_KEY"),
+            base_url=settings.llm_host,
+            api_key=settings.llm_api_key,
         )
         self.db = db
         self.tools = [
@@ -85,17 +85,14 @@ class LLMService:
 
         for _ in range(5):  # max tool-call rounds
             response = self.client.chat.completions.create(
-                model=os.getenv("LLM_MODEL"), messages=messages
+                model=settings.llm_model, messages=messages
             )
 
             choice = response.choices[0]
 
-            # Log the full choice so we can see what's actually coming back
             logging.warning("Finish reason: %s", choice.finish_reason)
             logging.warning("Raw message: %s", choice.message)
-            logging.warning(
-                "Content: %r", choice.message.content
-            )  # %r shows None explicitly
+            logging.warning("Content: %r", choice.message.content)
 
             if choice.finish_reason == "stop":
                 sql = choice.message.content or ""
@@ -107,9 +104,8 @@ class LLMService:
                     raise HTTPException(status_code=400, detail=sql[6:].strip())
                 return self.clean_sql(sql)
 
-            # LLM wants to call a tool
             if choice.finish_reason == "tool_calls":
-                messages.append(choice.message)  # append assistant turn with tool_calls
+                messages.append(choice.message)
 
                 for tool_call in choice.message.tool_calls:
                     result = self._handle_tool_call(tool_call)
@@ -138,8 +134,6 @@ class LLMService:
         return sql
 
     def _handle_tool_call(self, tool_call) -> str:
-        import json
-
         args = json.loads(tool_call.function.arguments)
         sql = args.get("sql", "")
 
@@ -173,7 +167,7 @@ class LLMService:
             try:
                 sql = self.ask_llm(prompt, question)
             except HTTPException:
-                raise  # LLM returned ERROR: - no point retrying
+                raise
 
             try:
                 self.validate_sql(sql)
@@ -187,8 +181,9 @@ class LLMService:
             try:
                 fits_db, error = verification_service.can_apply_to_db(sql=sql)
             except Exception as e:
-                logging.warning("Attempt %d failed: %s", attempt + 1, e.detail)
-                failed_attempts.append((sql, e.detail))
+                logging.warning("Attempt %d failed: %s", attempt + 1, str(e))
+                failed_attempts.append((sql, str(e)))
+                continue
 
             if not fits_db:
                 failed_attempts.append((sql, error))

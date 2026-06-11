@@ -1,21 +1,17 @@
 from pathlib import Path
 import os
 import subprocess
-from dotenv import load_dotenv
 from urllib.parse import urlparse
 
-
+from app.core.config import settings
 from app.core.exceptions import (
     EmptyFileError,
     InvalidSQLError,
 )
-
-from .base_sql_manager import BaseSQLManager
+from app.managers.base_sql_manager import BaseSQLManager
 
 ROOT = Path(__file__).parent.parent.parent
 DUMP_FILE = ROOT / "dump.sql"
-
-load_dotenv()
 
 
 class DumpManager(BaseSQLManager):
@@ -25,7 +21,7 @@ class DumpManager(BaseSQLManager):
             empty_error=EmptyFileError,
             invalid_error=InvalidSQLError,
         )
-        self._url = urlparse(os.getenv("DB_URL"))
+        self._url = urlparse(settings.db_url)
 
     def _validate(self, sql: str):
         pass

@@ -2,14 +2,12 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect, text
 
-
 from app.core.exceptions import (
     EmptyFileError,
     InvalidSQLError,
     NoSchemaError,
 )
-
-from .base_sql_manager import BaseSQLManager
+from app.managers.base_sql_manager import BaseSQLManager
 
 ROOT = Path(__file__).parent.parent.parent
 SCHEMA_FILE = ROOT / "schema.sql"
@@ -43,7 +41,6 @@ class SchemaManager(BaseSQLManager):
     def generate_from_db(self, session: Session):
         bind = session.get_bind()
         inspector = inspect(bind)
-        # needed to compile types to their string representation
         dialect = bind.dialect
         output = []
 
@@ -57,7 +54,6 @@ class SchemaManager(BaseSQLManager):
             col_defs = []
             for col in columns:
                 name = col["name"]
-                # compile the type object to a plain string e.g. VARCHAR(100)
                 col_type = col["type"].compile(dialect=dialect)
 
                 if name in serial_cols and name in pk_cols:
@@ -66,7 +62,6 @@ class SchemaManager(BaseSQLManager):
                     nullable = "" if col["nullable"] else " NOT NULL"
                     col_defs.append(f'  "{name}" {col_type}{nullable}')
 
-            # only add a separate PK constraint if it wasn't already inlined above
             non_serial_pks = [c for c in pk_cols if c not in serial_cols]
             if non_serial_pks:
                 pk_str = ", ".join(f'"{c}"' for c in non_serial_pks)

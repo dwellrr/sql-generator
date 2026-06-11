@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 import sqlglot
 from sqlalchemy.orm import Session
 
-from .exceptions import SQLFileIOError
+from app.core.exceptions import SQLFileIOError
 
 
 class BaseSQLManager(ABC):

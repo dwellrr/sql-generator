@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from app.services.db_service import VerificationService
+from app.services.verification_service import VerificationService
 
 
 @pytest.fixture

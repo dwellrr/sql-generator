@@ -6,8 +6,7 @@ from app.core.exceptions import (
     EmptyFileError,
     InvalidSQLError,
 )
-
-from .base_sql_manager import BaseSQLManager
+from app.managers.base_sql_manager import BaseSQLManager
 
 ROOT = Path(__file__).parent.parent.parent
 DATA_FILE = ROOT / "data.sql"
@@ -48,12 +47,10 @@ class DataManager(BaseSQLManager):
         if isinstance(v, (int, float)):
             return str(v)
         if isinstance(v, (dict, list)):
-            # JSON columns — escape single quotes and cast
             import json
 
             escaped = json.dumps(v).replace("'", "''")
             return f"'{escaped}'::jsonb"
-        # strings, dates, timestamps, decimals — cast to text, escape single quotes
         escaped = str(v).replace("'", "''")
         return f"'{escaped}'"
 
